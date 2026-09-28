@@ -27,10 +27,27 @@ ATTRIBUTION = "Oxford Radar RobotCar Dataset and Oxford RobotCar Dataset"
 LICENSE_URL = "https://creativecommons.org/licenses/by-nc-sa/4.0/"
 RELEASE_START_FRAME = 0
 RELEASE_FRAME_COUNT = 240
+TEXT_SUFFIXES = {".css", ".html", ".js", ".json", ".md", ".txt", ".yaml"}
 
 
 def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def payload_bytes(path: Path) -> bytes:
+    """Normalize text payloads so Git's Windows/Linux checkout style cannot alter a release."""
+    content = path.read_bytes()
+    if path.suffix.lower() in TEXT_SUFFIXES:
+        content = content.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return content
+
+
+def zip_info(name: str) -> zipfile.ZipInfo:
+    item = zipfile.ZipInfo(name, FIXED_ZIP_TIME)
+    item.compress_type = zipfile.ZIP_STORED
+    item.create_system = 3
+    item.external_attr = 0o100644 << 16
+    return item
 
 
 def read_pose_data() -> dict:
@@ -134,6 +151,8 @@ def validate() -> tuple[list[Path], dict, dict]:
 
 def main() -> None:
     files, data, metadata = validate()
+    files = sorted(files, key=lambda item: item.relative_to(WEB).as_posix())
+    payloads = {path: payload_bytes(path) for path in files}
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
     if not version or any(ch not in "0123456789." for ch in version):
         raise ValueError("VERSION must contain a numeric semantic version")
@@ -181,10 +200,10 @@ def main() -> None:
         "files": [
             {
                 "path": path.relative_to(WEB).as_posix(),
-                "bytes": path.stat().st_size,
-                "sha256": sha256(path.read_bytes()),
+                "bytes": len(payloads[path]),
+                "sha256": sha256(payloads[path]),
             }
-            for path in sorted(files, key=lambda item: item.relative_to(WEB).as_posix())
+            for path in files
         ],
     }
     manifest_bytes = (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
@@ -194,17 +213,15 @@ def main() -> None:
             raise RuntimeError(f"Unexpected stale release path: {old}")
         old.unlink()
     archive = DIST / f"{name}.zip"
-    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as bundle:
-        for path in sorted(files, key=lambda item: item.relative_to(WEB).as_posix()):
-            item = zipfile.ZipInfo(path.relative_to(WEB).as_posix(), FIXED_ZIP_TIME)
-            item.compress_type = zipfile.ZIP_DEFLATED
-            bundle.writestr(item, path.read_bytes())
-        item = zipfile.ZipInfo("release-manifest.json", FIXED_ZIP_TIME)
-        item.compress_type = zipfile.ZIP_DEFLATED
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as bundle:
+        for path in files:
+            item = zip_info(path.relative_to(WEB).as_posix())
+            bundle.writestr(item, payloads[path])
+        item = zip_info("release-manifest.json")
         bundle.writestr(item, manifest_bytes)
     digest = sha256(archive.read_bytes())
     (DIST / f"{name}.manifest.json").write_bytes(manifest_bytes)
-    (DIST / f"{name}.zip.sha256").write_text(f"{digest}  {archive.name}\n", encoding="utf-8")
+    (DIST / f"{name}.zip.sha256").write_bytes(f"{digest}  {archive.name}\n".encode("utf-8"))
     with zipfile.ZipFile(archive) as bundle:
         expected = {path.relative_to(WEB).as_posix() for path in files} | {"release-manifest.json"}
         if set(bundle.namelist()) != expected:

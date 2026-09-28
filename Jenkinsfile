@@ -13,27 +13,27 @@ pipeline {
         }
         stage('Build isolated static container') {
             steps {
-                sh 'docker compose --project-name radar-pose-demo build'
+                sh 'sudo docker compose --project-name radar-pose-demo build'
             }
         }
         stage('Deploy and verify module') {
             steps {
                 sh '''
                     set -eu
-                    docker compose --project-name radar-pose-demo up -d --no-build
-                    cid="$(docker compose --project-name radar-pose-demo ps -q radar)"
+                    sudo docker compose --project-name radar-pose-demo up -d --no-build
+                    cid="$(sudo docker compose --project-name radar-pose-demo ps -q radar)"
                     test -n "$cid"
                     for attempt in $(seq 1 24); do
-                        status="$(docker inspect --format '{{.State.Health.Status}}' "$cid")"
+                        status="$(sudo docker inspect --format '{{.State.Health.Status}}' "$cid")"
                         if [ "$status" = healthy ]; then break; fi
                         if [ "$status" = unhealthy ]; then
-                            docker compose --project-name radar-pose-demo logs --tail=100 radar
+                            sudo docker compose --project-name radar-pose-demo logs --tail=100 radar
                             exit 1
                         fi
                         sleep 5
                     done
                     if [ "$status" != healthy ]; then
-                        docker compose --project-name radar-pose-demo logs --tail=100 radar
+                        sudo docker compose --project-name radar-pose-demo logs --tail=100 radar
                         exit 1
                     fi
                     base="http://127.0.0.1:18104"
