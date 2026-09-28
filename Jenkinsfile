@@ -5,6 +5,20 @@ pipeline {
         disableConcurrentBuilds()
     }
     stages {
+        stage('Prepare complete recorded data') {
+            steps {
+                sh '''
+                    set -eu
+                    if [ ! -f runtime-data/manifest.json ]; then
+                        test -n "${RADAR_SOURCE_DIRECTORY:-}" || {
+                            echo 'Complete runtime-data pack missing; set RADAR_SOURCE_DIRECTORY to the server-side original data directory'
+                            exit 1
+                        }
+                        python3 tools/prepare_full_data.py --source "$RADAR_SOURCE_DIRECTORY"
+                    fi
+                '''
+            }
+        }
         stage('Validate and package module') {
             steps {
                 sh 'python3 tools/package_release.py'
@@ -39,9 +53,10 @@ pipeline {
                     base="http://127.0.0.1:18104"
                     curl -fsS "$base/index.html" | grep -q '不在浏览器中运行模型推理'
                     curl -fsS "$base/data-license.html" | grep -q 'CC BY-NC-SA 4.0'
-                    curl -fsS "$base/data/pose-excerpt.js" | grep -q '"excerptStartFrame":0'
-                    curl -fsS "$base/assets/radar/1547557604078984.jpg" -o /dev/null
-                    curl -fsS "$base/assets/stereo/1547557604081434.jpg" -o /dev/null
+                    curl -fsS "$base/full/manifest.json" | grep -q '"sampleCount":7203'
+                    curl -fsS "$base/full/chunks/page-00030.json" | grep -q '"startFrame":7200'
+                    curl -fsS "$base/full/radar/1547559404102392.jpg" -o /dev/null
+                    curl -fsS "$base/full/stereo/1547559404126575.jpg" -o /dev/null
                 '''
             }
         }

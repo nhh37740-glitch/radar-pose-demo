@@ -2,24 +2,24 @@
 
 ## Delivered behavior
 
-The module is an independently deployable static replay of Oxford Radar RobotCar sequence `2019-01-15-13-06-37`, source frames 0–239. It contains 240 contiguous saved records and exactly one matching real radar image and stereo image per record. The page identifies the recorded subset and duration and says that all pose estimates are precomputed; no live inference runs in the browser.
+The module is an independently deployable static replay of Oxford Radar RobotCar sequence `2019-01-15-13-06-37`, source frames 0–7202. Its separate binary data pack contains 7,203 contiguous saved records and exactly one matching real radar image and stereo image per record. The page loads pose records in bounded pages, supports seeking every frame, and says that all pose estimates are precomputed; no live inference runs in the browser.
 
 ## Boundaries and delivery
 
-- `web/` is the complete isolated runtime root.
-- `tools/prepare_excerpt.py` is an optional offline source importer. It requires the complete local source only to regenerate the excerpt.
-- `tools/package_release.py` validates the data/image contract and builds the module ZIP, manifest, and SHA-256 delivery.
-- `Dockerfile` copies only `web/` into Nginx; `compose.yaml` binds to host loopback port 18104.
-- The portfolio contains only an entry card and gateway route. It does not vendor the excerpt or duplicate the media files.
+- `web/` is the small isolated runtime root and real 240-frame fallback.
+- `tools/prepare_full_data.py` runs on the server against the transferred original sensor files; `runtime-data/` is Git ignored and contains the complete paged binary data pack.
+- `tools/package_release.py` validates the full data/image contract and streams the complete versioned ZIP, manifest, and SHA-256 delivery with bounded memory.
+- `Dockerfile` copies only `web/` into Nginx; `compose.yaml` mounts `runtime-data/` read-only at `/full/` and binds to host loopback port 18104.
+- The portfolio contains only an entry card and gateway route. It does not vendor or duplicate the media files.
 
 ## Rights and provenance
 
-Oxford RobotCar dataset pages state CC BY-NC-SA 4.0 and non-commercial academic use. The page and manifest provide attribution, license scope, privacy notice, and requested citations for the radar dataset, RobotCar dataset, and released RTK ground truth. Data and excerpted reference/derived pose records are distributed with those terms; unrelated project code is outside that license. Recheck the official Oxford notices if the use or distribution context changes.
+Oxford RobotCar dataset pages state CC BY-NC-SA 4.0 and non-commercial academic use. The page and manifest provide attribution, license scope, privacy notice, and requested citations for the radar dataset, RobotCar dataset, and released RTK ground truth. Included sensor data and reference/derived pose records are distributed with those terms; unrelated project code is outside that license. Recheck the official Oxford notices if the use or distribution context changes.
 
 ## Validation gates
 
 1. Confirm the metadata names the expected sequence and explicitly identifies saved-data replay with `liveInference: false`.
-2. Confirm frame indices are contiguous and the image filenames exactly match each row's radar and stereo timestamps.
-3. Confirm the entry pages disclose the excerpt range, duration, no-live-inference behavior, attribution, and license links.
-4. Package a deterministic ZIP with SHA-256 and per-file manifest, then build/deploy the isolated static container.
-5. Smoke-check the page, disclosure, data script, paired images, and container health over loopback.
+2. Confirm all 7,203 frame indices are contiguous and the image filenames exactly match each row's radar and stereo timestamps.
+3. Confirm the entry pages and data-license page disclose the complete range, fallback behavior, no-live-inference behavior, attribution, and license links.
+4. Package a deterministic ZIP with SHA-256 and per-file manifest using streamed image reads, then build/deploy the isolated static container on the server.
+5. Smoke-check the page, complete manifest, last pose page, frame 7202 paired images, and container health over loopback.

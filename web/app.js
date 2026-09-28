@@ -138,15 +138,30 @@
   let localBounds = null;
   let globalBounds = null;
   let metadata = null;
+  let overviewRows = [];
+  let fullManifest = null;
+  let usingFullData = false;
+  let pageStart = 0;
+  let totalFrames = 0;
+  let transitioning = false;
+  const notice = document.getElementById("data-notice");
+  const seek = document.getElementById("frame-seek");
   let currentIndex = 0;
   let paused = false;
   let lastStep = 0;
   const radarImageCache = new Map();
   const stereoImageCache = new Map();
+  const radarImageInflight = new Map();
+  const stereoImageInflight = new Map();
 
   function fail(message) {
+    paused = true;
     status.textContent = message;
     status.classList.add("error");
+    if (notice) {
+      notice.textContent = message;
+      notice.classList.add("error");
+    }
     console.error(message);
   }
 
@@ -155,11 +170,19 @@
   }
 
   function radarImageUrl(timestamp) {
-    return `${ensureTrailingSlash(config.radarImageDirectory)}${timestamp}.jpg`;
+    const directory = usingFullData ? config.fullRadarImageDirectory : config.radarImageDirectory;
+    return `${ensureTrailingSlash(directory)}${timestamp}.jpg`;
   }
 
   function stereoImageUrl(timestamp) {
-    return `${ensureTrailingSlash(config.stereoImageDirectory)}${timestamp}.jpg`;
+    const directory = usingFullData ? config.fullStereoImageDirectory : config.stereoImageDirectory;
+    return `${ensureTrailingSlash(directory)}${timestamp}.jpg`;
+  }
+
+  async function fetchJson(path) {
+    const response = await fetch(path, { cache: "default" });
+    if (!response.ok) throw new Error(`Could not load recorded data: ${path} (HTTP ${response.status})`);
+    return response.json();
   }
 
   function loadPoseScript(path) {
@@ -410,14 +433,13 @@
     context.fillStyle = "#07121a";
     context.fillRect(0, 0, canvas.width, canvas.height);
 
-    const stride = Math.max(1, Math.floor(clip.length / 1200));
     const drawTrack = (northField, eastField, color, alpha) => {
       context.save();
       context.globalAlpha = alpha;
       context.fillStyle = color;
       context.beginPath();
-      for (let index = 0; index <= endIndex; index += stride) {
-        const routeRow = clip[index];
+      for (const routeRow of overviewRows) {
+        if (routeRow[F.frameIndex] > pageStart + endIndex) break;
         const [x, y] = toCanvas(
           routeRow[northField], routeRow[eastField], canvas, globalBounds, 15,
         );
@@ -498,15 +520,20 @@
     methodSpecs.forEach((spec) => drawPose(spec, row, index));
     methodSpecs.forEach((spec) => drawGlobalMap(spec, row, index));
     updateMethodStates(row);
-    status.textContent = paused ? "Paused · saved pose replay" : `Recorded pose replay ${index + 1} / ${clip.length} · no live inference`;
+    const absoluteIndex = pageStart + index;
+    seek.value = String(absoluteIndex);
+    setText("seek-label", `Frame ${absoluteIndex} / ${totalFrames - 1}`);
+    status.textContent = paused ? `Paused · saved pose replay ${absoluteIndex + 1} / ${totalFrames}` :
+      `Recorded pose replay ${absoluteIndex + 1} / ${totalFrames} · no live inference`;
     warmImageCache(index);
   }
 
-  function loadCachedImage(cache, key, url, label) {
+  function loadCachedImage(cache, inflight, key, url, label) {
     if (cache.has(key)) {
       return Promise.resolve(cache.get(key));
     }
-    return new Promise((resolve, reject) => {
+    if (inflight.has(key)) return inflight.get(key);
+    const promise = new Promise((resolve, reject) => {
       const image = new Image();
       image.onload = () => {
         cache.set(key, image);
@@ -514,19 +541,24 @@
           const oldestTimestamp = cache.keys().next().value;
           cache.delete(oldestTimestamp);
         }
+        inflight.delete(key);
         resolve(image);
       };
-      image.onerror = () => reject(
-        new Error(`Missing ${label} image: ${url}`),
-      );
+      image.onerror = () => {
+        inflight.delete(key);
+        reject(new Error(`Missing ${label} image: ${url}`));
+      };
       image.src = url;
     });
+    inflight.set(key, promise);
+    return promise;
   }
 
   function loadRadarImage(row) {
     const timestamp = row[F.timestamp];
     return loadCachedImage(
       radarImageCache,
+      radarImageInflight,
       timestamp,
       radarImageUrl(timestamp),
       "radar",
@@ -537,6 +569,7 @@
     const timestamp = row[F.stereoTimestamp];
     return loadCachedImage(
       stereoImageCache,
+      stereoImageInflight,
       timestamp,
       stereoImageUrl(timestamp),
       "stereo",
@@ -545,9 +578,15 @@
 
   function warmImageCache(index) {
     for (let offset = 0; offset < Math.min(PRELOAD_AHEAD, clip.length); offset += 1) {
-      const row = clip[(index + offset) % clip.length];
-      loadRadarImage(row).catch((error) => fail(error.message));
-      loadStereoImage(row).catch((error) => fail(error.message));
+      const next = index + offset;
+      if (next >= clip.length) break;
+      const row = clip[next];
+      if (radarImageInflight.size < PRELOAD_AHEAD) {
+        loadRadarImage(row).catch((error) => fail(error.message));
+      }
+      if (stereoImageInflight.size < PRELOAD_AHEAD) {
+        loadStereoImage(row).catch((error) => fail(error.message));
+      }
     }
   }
 
@@ -561,35 +600,100 @@
     }
   }
 
-  function animate(timestamp) {
-    if (!paused && timestamp - lastStep >= config.intervalMs) {
-      currentIndex = (currentIndex + 1) % clip.length;
+  function validateManifest(manifest) {
+    const count = Number(manifest?.metadata?.sampleCount);
+    if (!Number.isInteger(count) || count < 1 || !Number.isInteger(manifest.pageSize) ||
+        manifest.pageSize < 1 || !Array.isArray(manifest.pages) ||
+        !Array.isArray(manifest.overviewRows) || manifest.overviewRows.length === 0 ||
+        !manifest.globalBounds || manifest.formatVersion !== 1) {
+      throw new Error("Full recording manifest is invalid");
+    }
+    let next = 0;
+    for (const [index, page] of manifest.pages.entries()) {
+      if (page.startFrame !== next || page.startFrame !== index * manifest.pageSize ||
+          !Number.isInteger(page.count) || page.count < 1 || page.count > manifest.pageSize ||
+          (index < manifest.pages.length - 1 && page.count !== manifest.pageSize) ||
+          !/^chunks\/page-\d{5}\.json$/.test(page.file)) {
+        throw new Error("Full recording page index is invalid");
+      }
+      next += page.count;
+    }
+    if (next !== count || manifest.overviewRows[0][F.frameIndex] !== 0 ||
+        manifest.overviewRows.at(-1)[F.frameIndex] !== count - 1) {
+      throw new Error("Full recording frame count is inconsistent");
+    }
+  }
+
+  async function loadPage(pageNumber, absoluteIndex) {
+    const page = fullManifest.pages[pageNumber];
+    if (!page || absoluteIndex < page.startFrame || absoluteIndex >= page.startFrame + page.count) {
+      throw new Error(`Frame ${absoluteIndex} is outside the recorded sequence`);
+    }
+    status.textContent = `Loading recorded frames ${page.startFrame}–${page.startFrame + page.count - 1}…`;
+    const data = await fetchJson(`./full/${page.file}`);
+    if (data.startFrame !== page.startFrame || !Array.isArray(data.frames) ||
+        data.frames.length !== page.count || data.frames.some((row, offset) =>
+          !Array.isArray(row) || row.length !== 32 || row[F.frameIndex] !== page.startFrame + offset)) {
+      throw new Error(`Recorded frame page ${pageNumber} is missing or invalid`);
+    }
+    clip = data.frames;
+    pageStart = page.startFrame;
+    currentIndex = absoluteIndex - pageStart;
+    cameraCenters = computeCameraCenters(clip);
+    await Promise.all([loadRadarImage(clip[currentIndex]), loadStereoImage(clip[currentIndex])]);
+  }
+
+  async function seekFrame(absoluteIndex) {
+    if (transitioning) return;
+    transitioning = true;
+    try {
+      if (usingFullData && (absoluteIndex < pageStart || absoluteIndex >= pageStart + clip.length)) {
+        const pageNumber = Math.floor(absoluteIndex / fullManifest.pageSize);
+        await loadPage(pageNumber, absoluteIndex);
+      } else {
+        currentIndex = absoluteIndex - pageStart;
+      }
       render(currentIndex);
+      lastStep = performance.now();
+    } catch (error) {
+      paused = true;
+      fail(error.message);
+    } finally {
+      transitioning = false;
+    }
+  }
+
+  function animate(timestamp) {
+    if (!paused && !transitioning && timestamp - lastStep >= config.intervalMs) {
+      const next = (pageStart + currentIndex + 1) % totalFrames;
       lastStep = timestamp;
+      void seekFrame(next);
     }
     window.requestAnimationFrame(animate);
   }
 
-  function bindKeyboard() {
+  function bindControls() {
     window.addEventListener("keydown", (event) => {
       if (event.code === "Space") {
         event.preventDefault();
         paused = !paused;
         render(currentIndex);
       } else if (event.key.toLowerCase() === "r") {
-        currentIndex = 0;
-        lastStep = performance.now();
-        render(currentIndex);
+        void seekFrame(0);
       }
+    });
+    seek.max = String(totalFrames - 1);
+    seek.addEventListener("change", () => {
+      paused = true;
+      void seekFrame(Number(seek.value));
     });
   }
 
-  async function start() {
-    if (!config) throw new Error("DEMO_CONFIG is missing");
+  async function loadExcerptFallback() {
     await loadPoseScript(config.poseDataScript);
     const data = window.RADAR_POSE_METHOD_DATA;
     if (!data || !Array.isArray(data.frames)) {
-      throw new Error("RADAR_POSE_METHOD_DATA is missing or invalid");
+      throw new Error("Full recording and saved excerpt are both unavailable");
     }
     metadata = data.metadata;
     const startIndex = Number(config.startFrame);
@@ -597,20 +701,42 @@
       throw new Error(`Invalid startFrame: ${config.startFrame}`);
     }
     const requestedFrameCount = Number(config.frameCount);
-    const availableFrameCount = data.frames.length - startIndex;
-    const frameCount = requestedFrameCount > 0 ? requestedFrameCount : availableFrameCount;
+    const frameCount = requestedFrameCount > 0 ? requestedFrameCount : data.frames.length - startIndex;
     clip = data.frames.slice(startIndex, startIndex + frameCount);
-    if (clip.length !== frameCount || clip.length === 0) {
-      throw new Error(`Requested ${frameCount} frames but loaded ${clip.length}`);
+    if (clip.length !== frameCount || clip.length === 0 ||
+        clip.some((row) => !Array.isArray(row) || row.length < 32)) {
+      throw new Error("Saved excerpt is missing or invalid");
     }
-    if (clip.some((row) => !Array.isArray(row) || row.length < 32)) {
-      throw new Error("Pose data has an unexpected row format");
-    }
+    totalFrames = clip.length;
+    pageStart = 0;
     cameraCenters = computeCameraCenters(clip);
     globalBounds = computeGlobalBounds(clip);
+    overviewRows = clip;
+    notice.textContent = `Full recording data is unavailable. Showing the ${totalFrames}-frame real excerpt only.`;
+    notice.classList.add("error");
     await preloadInitialImages();
-    bindKeyboard();
-    currentIndex = 0;
+  }
+
+  async function start() {
+    if (!config) throw new Error("DEMO_CONFIG is missing");
+    let manifest;
+    try {
+      manifest = await fetchJson(config.fullDataManifest);
+    } catch (error) {
+      await loadExcerptFallback();
+    }
+    if (manifest) {
+      validateManifest(manifest);
+      fullManifest = manifest;
+      usingFullData = true;
+      metadata = manifest.metadata;
+      totalFrames = metadata.sampleCount;
+      globalBounds = manifest.globalBounds;
+      overviewRows = manifest.overviewRows;
+      notice.textContent = `Complete real recording: ${totalFrames} paired radar and stereo frames · ${metadata.recordedDurationSeconds.toFixed(2)} seconds of capture · saved pose estimates.`;
+      await loadPage(0, 0);
+    }
+    bindControls();
     render(currentIndex);
     lastStep = performance.now();
     window.requestAnimationFrame(animate);
