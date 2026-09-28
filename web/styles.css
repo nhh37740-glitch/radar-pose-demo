@@ -580,6 +580,10 @@ footer {
 .signal::after { display: none; animation: none; }
 .replay-footer { display: grid; gap: 0.35rem; padding: 0.8rem 1rem; background: rgba(12, 20, 28, 0.88); border: 1px solid rgba(81, 216, 238, 0.16); border-radius: 0.7rem; font-size: clamp(0.56rem, 0.7vw, 0.78rem); }
 .replay-footer p { margin: 0; }
+.seek-control { display: flex; align-items: center; gap: 1rem; color: #e9f1ef; }
+.seek-control input { flex: 1; min-width: 8rem; accent-color: #51d8ee; }
+.data-notice { color: #b8c7cd; }
+.data-notice.error { color: #ffad96; }
 .replay-note { color: #e9f1ef; }
 .attribution { color: #b8c7cd; }
 .attribution a { color: #7fe5f3; text-decoration: underline; text-underline-offset: 0.16em; }

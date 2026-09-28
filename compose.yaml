@@ -3,5 +3,7 @@ services:
     image: radar-pose-demo:local
     build: .
     restart: unless-stopped
+    volumes:
+      - ./runtime-data:/usr/share/nginx/html/full:ro
     ports:
       - "${RADAR_BIND:-127.0.0.1}:${RADAR_PORT:-18104}:80"
