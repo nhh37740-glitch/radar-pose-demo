@@ -11,7 +11,10 @@ import argparse
 import json
 import math
 import shutil
+import tempfile
 from pathlib import Path
+
+from package_release import validate as validate_release
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,38 +37,7 @@ def write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8", newline="\n")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", required=True, type=Path)
-    parser.add_argument("--output", type=Path, default=ROOT / "runtime-data")
-    args = parser.parse_args()
-    source = args.source.resolve()
-    output = args.output.resolve()
-    if output == source or source in output.parents or output in source.parents:
-        raise ValueError("Output must be separate from the source directory")
-    data = load_source(source / "data" / DATA_FILE)
-    rows = data.get("frames")
-    metadata = data.get("metadata", {})
-    if metadata.get("sequence") != SEQUENCE or not isinstance(rows, list) or len(rows) != metadata.get("sampleCount"):
-        raise ValueError("Unexpected sequence or pose row count")
-    if not rows or any(not isinstance(row, list) or len(row) != 32 or row[0] != index for index, row in enumerate(rows)):
-        raise ValueError("Pose rows must be contiguous 32-field records starting at frame zero")
-    for field, label in ((1, "radar"), (31, "stereo")):
-        stamps = [int(row[field]) for row in rows]
-        if len(set(stamps)) != len(rows):
-            raise ValueError(f"Duplicate {label} image timestamp")
-        directory = source / "assets" / label
-        for stamp in stamps:
-            image = directory / f"{stamp}.jpg"
-            if not image.is_file():
-                raise FileNotFoundError(image)
-            with image.open("rb") as stream:
-                if stream.read(3) != b"\xff\xd8\xff":
-                    raise ValueError(f"Invalid JPEG: {image}")
-    if output.exists() and any(output.iterdir()):
-        raise ValueError(f"Output directory must be empty: {output}")
-    output.mkdir(parents=True, exist_ok=True)
-
+def build_pack(output: Path, source: Path, rows: list, metadata: dict) -> None:
     page_entries = []
     for page_number, start in enumerate(range(0, len(rows), PAGE_SIZE)):
         page = rows[start:start + PAGE_SIZE]
@@ -113,7 +85,49 @@ def main() -> None:
                          "minEast": center_east - span / 2, "maxEast": center_east + span / 2},
         "overviewRows": overview,
     })
-    print(f"Prepared {len(rows)} real pose rows in {len(page_entries)} pages with {len(rows)} paired radar/stereo JPEGs at {output}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source", required=True, type=Path)
+    parser.add_argument("--output", type=Path, default=ROOT / "runtime-data")
+    args = parser.parse_args()
+    source = args.source.resolve()
+    output = args.output.resolve()
+    if output == source or source in output.parents or output in source.parents:
+        raise ValueError("Output must be separate from the source directory")
+    data = load_source(source / "data" / DATA_FILE)
+    rows = data.get("frames")
+    metadata = data.get("metadata", {})
+    if metadata.get("sequence") != SEQUENCE or not isinstance(rows, list) or len(rows) != metadata.get("sampleCount"):
+        raise ValueError("Unexpected sequence or pose row count")
+    if not rows or any(not isinstance(row, list) or len(row) != 32 or row[0] != index for index, row in enumerate(rows)):
+        raise ValueError("Pose rows must be contiguous 32-field records starting at frame zero")
+    for field, label in ((1, "radar"), (31, "stereo")):
+        stamps = [int(row[field]) for row in rows]
+        if len(set(stamps)) != len(rows):
+            raise ValueError(f"Duplicate {label} image timestamp")
+        directory = source / "assets" / label
+        for stamp in stamps:
+            image = directory / f"{stamp}.jpg"
+            if not image.is_file():
+                raise FileNotFoundError(image)
+            with image.open("rb") as stream:
+                if stream.read(3) != b"\xff\xd8\xff":
+                    raise ValueError(f"Invalid JPEG: {image}")
+    if output.exists():
+        raise ValueError(f"Refusing to replace an existing or mounted data pack: {output}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".runtime-data-stage-", dir=output.parent) as temporary:
+        stage = Path(temporary).resolve()
+        if stage.parent != output.parent or not stage.name.startswith(".runtime-data-stage-"):
+            raise RuntimeError("Unexpected staging directory")
+        build_pack(stage, source, rows, metadata)
+        validate_release(stage)
+        if output.exists():
+            raise ValueError(f"Refusing to replace an existing or mounted data pack: {output}")
+        stage.rename(output)
+    print(f"Prepared and validated {len(rows)} real pose rows in {math.ceil(len(rows) / PAGE_SIZE)} pages with paired radar/stereo JPEGs at {output}")
 
 
 if __name__ == "__main__":
