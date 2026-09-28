@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Radar Pose Playback · Oxford recorded sequence</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="stage">
+      <header class="hero">
+        <p class="eyebrow">RADAR LOCALIZATION · RECORDED SEQUENCE</p>
+        <h1>Radar pose sequence replay <span lang="zh-CN">真实序列回放</span></h1>
+        <p class="subtitle">Oxford Radar RobotCar · sequence 2019-01-15-13-06-37 · saved sensor frames and precomputed pose estimates; no live inference in this browser.</p>
+      </header>
+
+      <main class="flow" aria-label="Recorded radar and stereo frame replay">
+        <section class="input-column" aria-label="Sensor views and ground truth">
+          <article class="camera-card card">
+            <div class="card-heading compact-heading">
+              <div>
+                <h2>Stereo Centre View</h2>
+                <p>Forward RGB context</p>
+              </div>
+            </div>
+            <div class="camera-frame">
+              <img id="stereo-image" alt="Current stereo centre RGB frame" />
+            </div>
+          </article>
+
+          <article class="radar-card card">
+            <div class="card-heading compact-heading">
+              <span class="step">1</span>
+              <div>
+                <h2>Radar BEV Input</h2>
+                <p>Bird's-eye radar view</p>
+              </div>
+            </div>
+            <div class="radar-frame">
+              <img id="radar-image" alt="Current radar bird's-eye-view frame" />
+              <div class="radar-scan" aria-hidden="true"></div>
+              <div class="sensor-mark" aria-hidden="true"></div>
+            </div>
+            <div class="frame-readout">
+              <span id="frame-label">Frame —</span>
+              <span id="timestamp-label">Timestamp —</span>
+            </div>
+          </article>
+
+          <article class="pose-card card gt-card">
+            <div class="pose-title">
+              <span class="color-dot gt-dot"></span>
+              <div>
+                <h3>Ground Truth</h3>
+                <p>Reference pose</p>
+              </div>
+            </div>
+            <div class="pose-map-frame">
+              <canvas id="gt-map" width="600" height="500"></canvas>
+              <canvas id="gt-global-map" class="pose-global-map" width="240" height="180"></canvas>
+            </div>
+            <div class="pose-values">
+              <div><span>North</span><strong id="gt-north">—</strong></div>
+              <div><span>East</span><strong id="gt-east">—</strong></div>
+              <div><span>Down</span><strong id="gt-down">—</strong></div>
+              <div><span>Yaw</span><strong id="gt-yaw">—</strong></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="model-flow" aria-label="Recorded frame playback diagram; no model runs here">
+          <div class="signal signal-left"></div>
+          <div class="model-node">
+            <span>DATA</span>
+            <small>Saved pose<br />estimates</small>
+          </div>
+          <div class="signal signal-right"></div>
+        </section>
+
+        <section class="output-area">
+          <div class="output-heading">
+            <span class="step">2</span>
+            <div>
+              <h2>Global Pose Comparison</h2>
+              <p>NED coordinates · North up · East right</p>
+            </div>
+          </div>
+
+          <div class="pose-columns">
+            <article class="pose-card card radar-primary-card">
+              <div class="pose-title">
+                <span class="color-dot radar-primary-dot"></span>
+                <div>
+                  <h3>Radar-primary estimate</h3>
+                  <p>Precomputed estimate · CFEAR-lite + model</p>
+                </div>
+              </div>
+              <div class="pose-map-frame">
+                <canvas id="radar-primary-map" width="600" height="500"></canvas>
+                <canvas id="radar-primary-global-map" class="pose-global-map" width="240" height="180"></canvas>
+              </div>
+              <div class="pose-values">
+                <div><span>North</span><strong id="radar-primary-north">—</strong></div>
+                <div><span>East</span><strong id="radar-primary-east">—</strong></div>
+                <div><span>Down</span><strong id="radar-primary-down">—</strong></div>
+                <div><span>Yaw</span><strong id="radar-primary-yaw">—</strong></div>
+              </div>
+            </article>
+
+            <article class="pose-card card temporal-card">
+              <div class="pose-title">
+                <span class="color-dot temporal-dot"></span>
+                <div>
+                  <h3>Temporal estimate</h3>
+                  <p>Precomputed estimate · V113</p>
+                </div>
+              </div>
+              <div class="pose-map-frame">
+                <canvas id="temporal-map" width="600" height="500"></canvas>
+                <canvas id="temporal-global-map" class="pose-global-map" width="240" height="180"></canvas>
+              </div>
+              <div class="pose-values">
+                <div><span>North</span><strong id="temporal-north">—</strong></div>
+                <div><span>East</span><strong id="temporal-east">—</strong></div>
+                <div><span>Down</span><strong id="temporal-down">—</strong></div>
+                <div><span>Yaw</span><strong id="temporal-yaw">—</strong></div>
+              </div>
+            </article>
+
+            <article class="pose-card card single-frame-card">
+              <div class="pose-title">
+                <span class="color-dot single-frame-dot"></span>
+                <div>
+                  <h3>Single-frame estimate</h3>
+                  <p>Precomputed estimate · V86 · no temporal constraint</p>
+                </div>
+              </div>
+              <div class="pose-map-frame">
+                <canvas id="single-frame-map" width="600" height="500"></canvas>
+                <canvas id="single-frame-global-map" class="pose-global-map" width="240" height="180"></canvas>
+              </div>
+              <div class="pose-values">
+                <div><span>North</span><strong id="single-frame-north">—</strong></div>
+                <div><span>East</span><strong id="single-frame-east">—</strong></div>
+                <div><span>Down</span><strong id="single-frame-down">—</strong></div>
+                <div><span>Yaw</span><strong id="single-frame-yaw">—</strong></div>
+              </div>
+            </article>
+
+            <article class="pose-card card vo-primary-card">
+              <div class="pose-title">
+                <span class="color-dot vo-primary-dot"></span>
+                <div>
+                  <h3>VO-primary estimate</h3>
+                  <p>Precomputed estimate · V118 tuned VO-primary</p>
+                </div>
+                <span id="vo-primary-state" class="state-badge vo-primary-badge" aria-label="Stored method selection for this frame" title="Recorded method selection stored per frame; no live inference">SAVED VO</span>
+              </div>
+              <div class="pose-map-frame">
+                <canvas id="vo-primary-map" width="600" height="500"></canvas>
+                <canvas id="vo-primary-global-map" class="pose-global-map" width="240" height="180"></canvas>
+              </div>
+              <div class="pose-values">
+                <div><span>North</span><strong id="vo-primary-north">—</strong></div>
+                <div><span>East</span><strong id="vo-primary-east">—</strong></div>
+                <div><span>Down</span><strong id="vo-primary-down">—</strong></div>
+                <div><span>Yaw</span><strong id="vo-primary-yaw">—</strong></div>
+              </div>
+            </article>
+
+            <article class="pose-card card pure-vo-card">
+              <div class="pose-title">
+                <span class="color-dot pure-vo-dot"></span>
+                <div>
+                  <h3>Pure VO</h3>
+                  <p>GT-aligned start</p>
+                </div>
+              </div>
+              <div class="pose-map-frame">
+                <canvas id="pure-vo-map" width="600" height="500"></canvas>
+                <canvas id="pure-vo-global-map" class="pose-global-map" width="240" height="180"></canvas>
+              </div>
+              <div class="pose-values">
+                <div><span>North</span><strong id="pure-vo-north">—</strong></div>
+                <div><span>East</span><strong id="pure-vo-east">—</strong></div>
+                <div><span>Down</span><strong id="pure-vo-down">—</strong></div>
+                <div><span>Yaw</span><strong id="pure-vo-yaw">—</strong></div>
+              </div>
+            </article>
+
+            <article class="pose-card card pure-radar-card">
+              <div class="pose-title">
+                <span class="color-dot pure-radar-dot"></span>
+                <div>
+                  <h3>Pure Radar Odometry</h3>
+                  <p>GT-aligned start</p>
+                </div>
+              </div>
+              <div class="pose-map-frame">
+                <canvas id="pure-radar-map" width="600" height="500"></canvas>
+                <canvas id="pure-radar-global-map" class="pose-global-map" width="240" height="180"></canvas>
+              </div>
+              <div class="pose-values">
+                <div><span>North</span><strong id="pure-radar-north">—</strong></div>
+                <div><span>East</span><strong id="pure-radar-east">—</strong></div>
+                <div><span>Down</span><strong id="pure-radar-down">—</strong></div>
+                <div><span>Yaw</span><strong id="pure-radar-yaw">—</strong></div>
+              </div>
+            </article>
+          </div>
+        </section>
+      </main>
+
+      <footer class="replay-footer">
+        <p class="legend-line">Recorded frames 0–239 · 59.73 seconds of capture · replay speed 2.5×</p>
+        <p class="replay-note">All poses shown below are saved per-frame estimates. 不在浏览器中运行模型推理。 The browser only replays these records; it does not run a model or perform live inference.</p>
+        <p class="legend-line">NED world frame · Space pauses · R restarts · playback interval 100 ms per saved frame</p>
+        <p id="status" class="status">Loading saved pose records…</p>
+        <p class="attribution">Data: <a href="https://oxford-robotics-institute.github.io/radar-robotcar-dataset/" rel="noreferrer">Oxford Radar RobotCar</a> + <a href="https://robotcar-dataset.robots.ox.ac.uk/" rel="noreferrer">Oxford RobotCar</a> ·
+          <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="license noreferrer">CC BY-NC-SA 4.0</a> ·
+          <a href="data-license.html">attribution, license and citations</a></p>
+      </footer>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
