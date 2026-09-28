@@ -62,8 +62,8 @@ def check_image_set(directory: Path, expected: set[str], label: str) -> None:
                 raise ValueError(f"Invalid JPEG: {label}/{name}")
 
 
-def validate() -> tuple[list[tuple[str, Path]], dict]:
-    manifest_path = FULL / "manifest.json"
+def validate(full: Path = FULL) -> tuple[list[tuple[str, Path]], dict]:
+    manifest_path = full / "manifest.json"
     if not manifest_path.is_file():
         raise FileNotFoundError(f"Complete binary data pack missing: {manifest_path}")
     index = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -88,7 +88,7 @@ def validate() -> tuple[list[tuple[str, Path]], dict]:
                 count < 1 or count > 240 or (page_number < len(pages) - 1 and count != 240) or
                 name != f"chunks/page-{page_number:05d}.json"):
             raise ValueError(f"Invalid page index entry {page_number}")
-        path = FULL / name
+        path = full / name
         if not path.is_file():
             raise FileNotFoundError(path)
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -108,8 +108,8 @@ def validate() -> tuple[list[tuple[str, Path]], dict]:
     if (not isinstance(overview, list) or not overview or overview[0][0] != 0 or
             overview[-1][0] != EXPECTED_FRAMES - 1):
         raise ValueError("Complete route overview is missing")
-    check_image_set(FULL / "radar", radar_names, "full/radar")
-    check_image_set(FULL / "stereo", stereo_names, "full/stereo")
+    check_image_set(full / "radar", radar_names, "full/radar")
+    check_image_set(full / "stereo", stereo_names, "full/stereo")
 
     excerpt_path = WEB / "data" / "pose-excerpt.js"
     script = excerpt_path.read_text(encoding="utf-8").strip()
@@ -145,10 +145,10 @@ def validate() -> tuple[list[tuple[str, Path]], dict]:
     expected_full = {"manifest.json"} | chunk_paths | {f"radar/{name}" for name in radar_names} | {
         f"stereo/{name}" for name in stereo_names
     }
-    actual_full = {p.relative_to(FULL).as_posix() for p in FULL.rglob("*") if p.is_file()}
+    actual_full = {p.relative_to(full).as_posix() for p in full.rglob("*") if p.is_file()}
     if actual_full != expected_full:
         raise ValueError(f"Unexpected full data files: {sorted(actual_full ^ expected_full)[:3]}")
-    files = [(name, WEB / name) for name in expected_web] + [(f"full/{name}", FULL / name) for name in expected_full]
+    files = [(name, WEB / name) for name in expected_web] + [(f"full/{name}", full / name) for name in expected_full]
     return sorted(files), metadata
 
 

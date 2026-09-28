@@ -7,21 +7,21 @@ The complete binary data pack contains **7,203** paired radar and stereo frames,
 ## Module boundaries
 
 - `web/` contains the runtime website and the existing real 240-frame fallback. It remains small in the private source repository.
-- `tools/prepare_full_data.py` validates the 7,203 source rows and paired JPEGs, then writes 31 JSON pages, a route overview, and the original images into the Git-ignored `runtime-data/` directory. Run it on the server against the transferred original data directory.
+- `tools/prepare_full_data.py` validates the 7,203 source rows and paired JPEGs, then writes 31 JSON pages, a route overview, and the original images into a fresh sibling staging directory. It validates that directory and atomically publishes the Git-ignored `runtime-data/` directory. Run it on the server against the transferred original data directory.
 - `tools/package_release.py` validates every full pose row and image, attribution, and the public file allowlist. It streams image hashes and ZIP entries in bounded chunks. The versioned full binary ZIP, per-file manifest, and SHA-256 file are written under `dist/` by Jenkins.
 - `Dockerfile` serves the small website and fallback. Compose mounts `runtime-data/` read-only at `/full/` in that isolated container.
 - `compose.yaml` binds the service to `127.0.0.1:18104`; the public project gateway can proxy `/projects/radar/` to it.
 
 ## Prepare the complete binary data pack on the server
 
-Transfer the original full pose-data JS and paired `assets/radar` and `assets/stereo` directories to a server-side source directory. Keep the data pack separate from GitHub source history. The source directory needs `data/method_comparison_jan15_cfear_lite_pose_data.js` and the two image directories. In the server Jenkins job, set `RADAR_SOURCE_DIRECTORY` to that directory; Jenkins prepares `runtime-data/` if it is absent, then validates and packages it. To prepare manually on the server:
+Transfer the original full pose-data JS and paired `assets/radar` and `assets/stereo` directories to a server-side source directory. Keep the data pack separate from GitHub source history. The source directory needs `data/method_comparison_jan15_cfear_lite_pose_data.js` and the two image directories. Jenkins defaults `RADAR_SOURCE_DIRECTORY` to `/home/ubuntu/radar-full-source`; its string parameter can select another private server directory. Jenkins prepares `runtime-data/` if it is absent, then validates and packages it. To prepare manually on the server:
 
 ```bash
 python3 tools/prepare_full_data.py --source /path/to/radar-pose-demo
 python3 tools/package_release.py
 ```
 
-The generator refuses a nonempty output directory, preventing accidental mixing of data versions. To update an existing pack, prepare into a new empty directory and switch the pack after validation. The browser plays the complete sequence at a 100 ms interval. `tools/prepare_excerpt.py` remains only for regenerating the separate fallback; do not run it during full release preparation.
+The generator refuses any existing output directory, including a mounted live pack. Interrupted preparation leaves no published partial pack. Normal failures clean the temporary directory; a hard termination may leave an ignored staging directory that a later run does not use. To update an existing pack, prepare into a new path and switch the pack after validation. The browser plays the complete sequence at a 100 ms interval. `tools/prepare_excerpt.py` remains only for regenerating the separate fallback; do not run it during full release preparation.
 
 ## Validate and serve
 
@@ -31,7 +31,7 @@ sudo docker compose --project-name radar-pose-demo up -d --build
 curl -fsS http://127.0.0.1:18104/index.html
 ```
 
-The Jenkins agent uses `sudo docker compose` because its service account does not have direct access to `/var/run/docker.sock`. Jenkins validates and archives the complete binary ZIP/manifest/SHA-256, builds the isolated static container on the server, and smoke-checks the final page and paired images over loopback.
+The Jenkins agent uses `sudo docker compose` because its service account does not have direct access to `/var/run/docker.sock`. Jenkins validates and archives the complete binary ZIP/manifest/SHA-256, builds the isolated static container on the server, and starts a candidate on loopback port 18105. It checks the complete manifest, last pose row, and paired images before switching production on 18104. Candidate failure leaves the existing service running; a failed production switch attempts to restore the previous image.
 
 ## Attribution and use
 

@@ -1,6 +1,7 @@
 .git
 dist
 runtime-data
+.runtime-data-stage-*
 __pycache__
 *.pyc
 PLAN.md
