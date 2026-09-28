@@ -124,6 +124,8 @@ def main() -> None:
             raise RuntimeError("Unexpected staging directory")
         build_pack(stage, source, rows, metadata)
         validate_release(stage)
+        # TemporaryDirectory starts at 0700; nginx needs to traverse the mounted pack.
+        stage.chmod(0o755)
         if output.exists():
             raise ValueError(f"Refusing to replace an existing or mounted data pack: {output}")
         stage.rename(output)
