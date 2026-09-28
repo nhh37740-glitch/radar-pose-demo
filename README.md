@@ -9,7 +9,7 @@ The release contains real recorded radar and stereo frames, plus saved per-frame
 - `web/` contains only the runtime website, excerpt records, and paired images.
 - `tools/prepare_excerpt.py` selects a contiguous source interval, verifies each radar/stereo timestamp against the original pose rows, emits only that interval, and writes a self-contained static module. The complete dataset path is needed only when intentionally regenerating a different interval.
 - `templates/data-license.html` is the attributed notice template used to generate a range-specific public license page.
-- `tools/package_release.py` validates source row continuity, frame-to-image correspondence, attribution, license disclosures, and the allowlisted module files. It emits a deterministic versioned ZIP, JSON manifest, and SHA-256 file under `dist/`.
+- `tools/package_release.py` validates source row continuity, frame-to-image correspondence, attribution, license disclosures, and the allowlisted module files. It normalizes text payloads to LF and uses fixed ZIP metadata with stored entries, so Windows/Linux checkout newlines and zlib versions cannot change the ZIP bytes. It emits a deterministic versioned ZIP, JSON manifest, and SHA-256 file under `dist/`.
 - `Dockerfile` serves the module's complete static runtime without data mounts or build-time dataset dependencies.
 - `compose.yaml` binds the service to `127.0.0.1:18104`; the public project gateway can proxy `/projects/radar/` to it.
 
@@ -28,11 +28,11 @@ By default the preparer selects 240 contiguous frames starting at source frame 0
 
 ```bash
 python3 tools/package_release.py
-docker compose --project-name radar-pose-demo up -d --build
+sudo docker compose --project-name radar-pose-demo up -d --build
 curl -fsS http://127.0.0.1:18104/index.html
 ```
 
-Jenkins runs the same package gate, archives the ZIP/manifest/SHA-256, builds the static container, and deploys the loopback service with HTTP health and content checks.
+The Jenkins agent uses `sudo docker compose` because its service account does not have direct access to `/var/run/docker.sock`. Jenkins runs the same package gate, archives the ZIP/manifest/SHA-256, builds the static container, and deploys the loopback service with HTTP health and content checks.
 
 ## Attribution and use
 
