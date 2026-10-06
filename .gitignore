@@ -3,3 +3,6 @@ runtime-data/
 .runtime-data-stage-*/
 __pycache__/
 *.pyc
+qt/build/
+qt/dist/
+qt/runtime/
