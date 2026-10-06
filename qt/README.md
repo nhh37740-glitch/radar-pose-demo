@@ -1,0 +1,46 @@
+# 雷达与图像回放：Qt 桌面版
+
+这是现有 radar 项目的原生 Qt/C++ 界面，读取同一份完整 Oxford 记录：7203 帧、0至7202、约1800秒。同步显示雷达扫描、相机图像和七种位姿。原网页保持可独立运行；桌面程序不用浏览器，也不执行在线模型。
+
+## 使用二进制版本
+
+解压 `radar-qt-full-1.0.0-windows-x64.zip`，运行 `start-radar.ps1`，或打开 `programs/radar-playback/radar-playback.exe`。首次只显示第0帧，点击“播放”才开始推进。完整包包含全部数据和 Qt/MSVC 运行库，无需安装 Qt、Python 或编译器。
+
+界面支持打开已有数据包、拖动到任意帧、上一帧/下一帧、0.25至16倍速、全局轨迹和跟随参考位置、按方法显示轨迹，以及导出包含起止帧的 CSV。
+
+`radar-qt-program-1.0.0-windows-x64.zip` 只含程序和运行依赖，适合复用已有完整数据包；运行后选择数据目录，也可指定 `--data <目录>`。数据目录必须含既有网页数据包的 manifest.json、chunks、radar、stereo，不是原始传感器采集文件夹。
+
+## 功能和执行位置
+
+| 功能 | 二进制模块 | 执行位置 | 输入 → 输出 |
+|---|---|---|---|
+| 读取位姿和配对图像、导出记录 | radar_data_reader.dll | 文件线程 | 数据目录、帧号、导出范围 → 同步帧、CSV |
+| 控制播放位置和速度 | radar_playback.dll | 界面线程 | 点击、帧号、速度、读取结果 → 带编号的读帧请求、显示帧 |
+| 显示图像、轨迹、误差和操作按钮 | radar_frontend.dll | 界面线程 | 同步帧和播放状态 → 窗口、操作请求 |
+| 定义交接内容和检查数值 | radar_contracts.dll | 调用方所在的线程 | 32字段记录 → 七种位姿及数据检查结果 |
+
+上游是已保存的数据包，下游是屏幕和导出的 CSV。程序内用 Qt 排队交接值副本；同一界面线程内直接调用。旧跳转结果带着旧编号返回时会被丢弃，防止覆盖最新帧。文件线程不修改窗口。详见[接口说明](docs/interfaces.md)。
+
+读取缓存最多4个分页、16对图像；轨迹历史最多1000个已显示帧，误差历史最多400个。暂停后停止播放定时器，没有持续动画或轮询。按真实时间戳安排播放期限，慢盘读取可能造成迟到；保证不丢帧且不会积压无限请求。
+
+## 编译和验证
+
+需要 Windows x64、MSVC 2022、Qt 6.8.3、CMake、Python3。准备全部数据仍使用原仓库的 `tools/prepare_full_data.py`，不改动原始素材。
+
+```powershell
+./qt/scripts/build.ps1 -QtRoot 'C:/path/to/Qt/6.8.3/msvc2022_64'
+./qt/scripts/test.ps1 -QtRoot 'C:/path/to/Qt/6.8.3/msvc2022_64' -DataRoot './runtime-data'
+./qt/scripts/package.ps1 -QtRoot 'C:/path/to/Qt/6.8.3/msvc2022_64' -DataRoot './runtime-data'
+```
+
+四组 QtTest 检查公共记录、读取缓存/错误/导出、播放时序/旧结果过滤和真实按钮/绘图。七个实际 EXE 场景检查全量图像解码、完整 CSV 与源记录逐字段一致、暂停 CPU、跨页跳转、末帧停止和错误输入。交付时移除 SDK 路径再执行这些场景，并编译一个只使用交付头文件和导入库的调用程序，加载三个业务 DLL。
+
+GitHub Windows CI 使用仓库现有的240帧真实片段作为明确标注的测试数据；完整交付的7203帧本地验证报告另附在包内，不能用片段测试代替全量数据验证。
+
+## 模块 SDK 和数据来源
+
+每个模块另有 DLL、`.lib` 导入库、公开头文件和 `module.json`。完整包的 `shared/sdk` 可用于编译 `examples/binary_consumer.cpp`，调用程序无需模块实现源码。业务模块依赖公共接口 DLL 及相同 Qt/MSVC ABI 的动态运行库；共同依赖位于 `shared/bin`。
+
+数据及保存的参考/派生位姿保留既有 Oxford 署名和 CC BY-NC-SA 4.0 说明，见交付包 `data-license.html`。Qt 动态运行库的许可和来源在 `licenses`；库可替换。所有交付文件有逐文件 SHA256 清单，源码版本记录在 manifest.json。
+
+当前版本是保存结果回放，不连接实时雷达、不运行原研究模型，也不把已有位姿当作实时计算结果。

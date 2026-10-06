@@ -1,0 +1,3 @@
+add_library(radar_playback SHARED playback.cpp)
+target_compile_definitions(radar_playback PRIVATE RADAR_PLAYBACK_BUILD)
+target_link_libraries(radar_playback PUBLIC radar_contracts Qt6::Core)

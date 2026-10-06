@@ -1,5 +1,9 @@
 # Radar Pose Playback
 
+## Native Qt desktop integration
+
+An independent Qt/C++ desktop application now reads the same complete data pack, synchronizes radar/stereo images, compares all seven saved pose methods, supports physical-time playback/seeking, and exports validated records. It is a native Widgets application with separately delivered DLL modules; no browser or live inference is required. See [`qt/README.md`](qt/README.md) for binary usage, thread/data flow, build and verification commands. The existing website/deployment remains independent.
+
 An independently versioned and deployed static module for replaying the complete real Oxford sequence `2019-01-15-13-06-37`.
 
 The complete binary data pack contains **7,203** paired radar and stereo frames, with saved pose estimates for frames **0–7202**, spanning about **1800.02 seconds** of capture. The browser fetches 240 pose rows per page and keeps only 32 radar and 32 stereo images in its application cache. A scrubber can seek any recorded frame. The existing 240-frame real excerpt remains an explicitly labeled fallback if the complete data pack is unavailable. The browser does not run a model, call an inference API, or perform live inference.
