@@ -1,5 +1,6 @@
 #include <radar/contracts.h>
 #include <QtWidgets/QApplication>
+#include <QtGui/QScreen>
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
@@ -15,7 +16,7 @@
 int main(int argc,char **argv){
     for(int i=1;i<argc;++i)if(QByteArray(argv[i])=="--headless")qputenv("QT_QPA_PLATFORM","offscreen");
     qputenv("QT_QPA_FONTDIR",(qEnvironmentVariable("SystemRoot","C:/Windows")+"/Fonts").toUtf8());
-    QApplication app(argc,argv);app.setApplicationName("radar-playback");app.setApplicationVersion("1.0.0");radar::registerTypes();
+    QApplication app(argc,argv);app.setApplicationName("radar-playback");app.setApplicationVersion(QString::fromLatin1(RADAR_APP_VERSION));radar::registerTypes();
     QCommandLineParser cli;cli.setApplicationDescription(QStringLiteral("完整雷达与图像位姿回放：读取已保存结果，不执行在线模型"));cli.addHelpOption();cli.addVersionOption();
     auto option=[&](const char *name,const char *description,const char *value="",const char *initial=""){
         cli.addOption(QCommandLineOption(QStringList{QString::fromLatin1(name)},QString::fromUtf8(description),QString::fromLatin1(value),QString::fromLatin1(initial)));
@@ -96,7 +97,12 @@ int main(int argc,char **argv){
     QObject::connect(view.get(),&radar::Frontend::stepRequested,playback.get(),&radar::Playback::step);
     QObject::connect(view.get(),&radar::Frontend::speedRequested,playback.get(),&radar::Playback::setSpeed);
     QObject::connect(view.get(),&radar::Frontend::exportRequested,&app,[&](QString path,int begin,int end){QMetaObject::invokeMethod(reader,"exportCsv",Qt::QueuedConnection,Q_ARG(quint64,quint64(2000000001ULL)),Q_ARG(QString,path),Q_ARG(int,begin),Q_ARG(int,end));});
-    fileThread.start();view->resize(1480,980);view->show();
+    fileThread.start();QSize initialSize(1480,980);
+    if(!cli.isSet("headless"))if(const auto *screen=QGuiApplication::primaryScreen()) {
+        const QSize available=screen->availableGeometry().size()-QSize(32,48);
+        initialSize=initialSize.boundedTo(available).expandedTo(view->minimumSize());
+    }
+    view->resize(initialSize);view->show();
     QString root=cli.value("data");if(root.isEmpty()){const QString bundled=QDir(QCoreApplication::applicationDirPath()).filePath("full");if(QFileInfo::exists(bundled+"/manifest.json"))root=bundled;}
     if(!root.isEmpty())QTimer::singleShot(0,&app,[&,root]{QMetaObject::invokeMethod(reader,"open",Qt::QueuedConnection,Q_ARG(QString,root));});
     else {view->showStatus(QStringLiteral("请选择包含 manifest.json 的完整数据包目录"));if(cli.isSet("headless")){recordError("No data pack selected");finish();}}

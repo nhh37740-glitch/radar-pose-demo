@@ -4,11 +4,13 @@
 
 ## 使用二进制版本
 
-解压 `radar-qt-full-1.0.0-windows-x64.zip`，运行 `start-radar.ps1`，或打开 `programs/radar-playback/radar-playback.exe`。首次只显示第0帧，点击“播放”才开始推进。完整包包含全部数据和 Qt/MSVC 运行库，无需安装 Qt、Python 或编译器。
+解压 `radar-qt-full-1.0.1-windows-x64.zip`，运行 `start-radar.ps1`，或打开 `programs/radar-playback/radar-playback.exe`。首次只显示第0帧，点击“播放”才开始推进。完整包包含全部数据和 Qt/MSVC 运行库，无需安装 Qt、Python 或编译器。
 
 界面支持打开已有数据包、拖动到任意帧、上一帧/下一帧、0.25至16倍速、全局轨迹和跟随参考位置、按方法显示轨迹，以及导出包含起止帧的 CSV。
 
-`radar-qt-program-1.0.0-windows-x64.zip` 只含程序和运行依赖，适合复用已有完整数据包；运行后选择数据目录，也可指定 `--data <目录>`。数据目录必须含既有网页数据包的 manifest.json、chunks、radar、stereo，不是原始传感器采集文件夹。
+1.0.1 将播放、倍速、跳转和时间状态集中到底部；左侧同时显示相机与雷达，右侧以完整路线为主。“位置与姿态”和“误差趋势”标签页保留七种方法的全部对比内容。详细时间戳可从“同步详情”查看，空格可播放或暂停；在输入框、原生控件和弹窗内保留原有键盘行为。普通启动会按屏幕可用区域调整窗口，界面支持1020×720及以上大小。
+
+`radar-qt-program-1.0.1-windows-x64.zip` 只含程序和运行依赖，适合复用已有完整数据包；运行后选择数据目录，也可指定 `--data <目录>`。数据目录必须含既有网页数据包的 manifest.json、chunks、radar、stereo，不是原始传感器采集文件夹。
 
 ## 功能和执行位置
 

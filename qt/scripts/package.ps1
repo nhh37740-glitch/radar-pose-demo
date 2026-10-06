@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$QtRoot,[Parameter(Mandatory=$true)][string]$DataRoot,[switch]$AppOnly,[string]$Version='1.0.0')
+param([Parameter(Mandatory=$true)][string]$QtRoot,[Parameter(Mandatory=$true)][string]$DataRoot,[switch]$AppOnly,[string]$Version='1.0.1')
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $repo=Split-Path $root -Parent

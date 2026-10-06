@@ -12,6 +12,10 @@
 #include <QtWidgets/QSpinBox>
 #include <QtWidgets/QScrollBar>
 #include <QtWidgets/QTableWidget>
+#include <QtWidgets/QTabWidget>
+#include <QtWidgets/QTabBar>
+#include <QtWidgets/QVBoxLayout>
+#include <QtGui/QKeyEvent>
 #include <QtCore/QTimer>
 #include <QtCore/QDir>
 #include <QtCore/QtMath>
@@ -61,6 +65,7 @@ private slots:
         auto *camera=child<QWidget>(w.get(),"cameraImage");auto *radar=child<QWidget>(w.get(),"radarImage");QVERIFY(camera->property("hasImage").toBool());QCOMPARE(camera->property("imageSize").toSize(),QSize(320,120));QVERIFY(radar->property("hasImage").toBool());
         const auto cameraGrab=camera->grab().toImage();QVERIFY(!cameraGrab.isNull());QCOMPARE(cameraGrab.pixelColor(cameraGrab.width()/2,cameraGrab.height()/2),QColor("#2764ba"));QCOMPARE(cameraGrab.pixelColor(1,1),QColor("#080e16"));
         const QString timestamp=child<QLabel>(w.get(),"timestampLabel")->text();QVERIFY(timestamp.contains("123"));QVERIFY(timestamp.contains("2.500 ms"));QVERIFY(timestamp.contains("12.300 s"));
+        const auto *summary=child<QLabel>(w.get(),"playbackSummary");QVERIFY(summary->text().contains("12.300 s"));QVERIFY(summary->text().contains("2.500 ms"));QCOMPARE(summary->toolTip(),timestamp);QVERIFY(!summary->text().contains(QString::number(frame(123).radarTimestamp)));
         auto *follow=child<QCheckBox>(w.get(),"followCheck");QTest::mouseClick(follow,Qt::LeftButton);QVERIFY(child<QWidget>(w.get(),"trajectoryPanel")->property("followCurrent").toBool());
         const auto grabbed=w->grab();QVERIFY(!grabbed.isNull());QVERIFY(grabbed.width()>=1020);QVERIFY(grabbed.height()>=720);
         const auto *license=child<QLabel>(w.get(),"licenseLabel");QVERIFY(license->text().contains("CC BY-NC-SA 4.0"));QVERIFY(license->text().contains("creativecommons.org"));QVERIFY(child<QLabel>(w.get(),"recordingNotice")->text().contains(QStringLiteral("不执行在线模型")));
@@ -76,11 +81,12 @@ private slots:
     void sparseHistoryUsesActualFrameCoordinates() {
         std::unique_ptr<radar::Frontend> w(radar_create_frontend(nullptr));w->setDataset(data());w->resize(1480,980);w->show();QTest::qWait(30);
         for(int index:{0,100,400}) {radar::Frame f;f.index=index;f.poses[1].north=index==100?100:0;w->showFrame(f);}
+        auto *tabs=child<QTabWidget>(w.get(),"inspectorTabs");QTest::mouseClick(tabs->tabBar(),Qt::LeftButton,Qt::NoModifier,tabs->tabBar()->tabRect(1).center());QTest::qWait(20);
         auto *chart=child<QWidget>(w.get(),"errorPanel");QVERIFY(chart);const auto image=chart->grab().toImage();const qreal ratio=image.devicePixelRatio();
         // The sparse middle sample is one quarter of the actual 0..400 frame range.
         // A sample-ordinal axis would put this peak at the halfway point instead.
         const double left=chart->width()*.47,span=chart->width()*.53-16;
-        auto hasTealNear=[&](double fraction){const QPoint center(qRound((left+span*fraction)*ratio),qRound(33*ratio));const int radius=qCeil(3*ratio);for(int y=center.y()-radius;y<=center.y()+radius;++y)for(int x=center.x()-radius;x<=center.x()+radius;++x) {if(!image.rect().contains(x,y))continue;const QColor c=image.pixelColor(x,y);if(qAbs(c.red()-57)<18&&qAbs(c.green()-213)<18&&qAbs(c.blue()-194)<18)return true;}return false;};
+        auto hasTealNear=[&](double fraction){const QPoint center(qRound((left+span*fraction)*ratio),qRound(38*ratio));const int radius=qCeil(3*ratio);for(int y=center.y()-radius;y<=center.y()+radius;++y)for(int x=center.x()-radius;x<=center.x()+radius;++x) {if(!image.rect().contains(x,y))continue;const QColor c=image.pixelColor(x,y);if(qAbs(c.red()-57)<18&&qAbs(c.green()-213)<18&&qAbs(c.blue()-194)<18)return true;}return false;};
         QVERIFY2(hasTealNear(.25),"Peak at frame100 must appear at25% of actual frame range");QVERIFY2(!hasTealNear(.5),"Sparse frame100 must not be shown as the ordinal midpoint");
     }
     void openTrajectoryPathsNeverFillTheirInterior() {
@@ -90,6 +96,36 @@ private slots:
         auto *chart=child<QWidget>(w.get(),"trajectoryPanel");const auto image=chart->grab().toImage();const qreal ratio=image.devicePixelRatio();const QRectF plot=QRectF(chart->rect()).adjusted(42,18,-18,-32);const double scale=std::min(plot.width()/110.,plot.height()/110.);
         const QPointF inside=plot.center()+QPointF(25*scale,25*scale);const QColor c=image.pixelColor(qRound(inside.x()*ratio),qRound(inside.y()*ratio));
         QVERIFY2(c.red()<80&&c.green()<80&&c.blue()<80,"An open trajectory may draw strokes, but must not fill the triangle between its endpoints");
+    }
+    void spaceShortcutRespectsNativeControlsAndDialogs() {
+        std::unique_ptr<radar::Frontend> w(radar_create_frontend(nullptr));w->setDataset(data());w->showFrame(frame(0));w->show();w->activateWindow();w->setFocus();QTest::qWait(30);
+        QSignalSpy toggle(w.get(),&radar::Frontend::toggleRequested);QTest::keyClick(w.get(),Qt::Key_Space);QCOMPARE(toggle.size(),1);
+        QKeyEvent repeated(QEvent::KeyPress,Qt::Key_Space,Qt::NoModifier,QStringLiteral(" "),true);QCoreApplication::sendEvent(w.get(),&repeated);QCOMPARE(toggle.size(),1);
+        auto *spin=child<QSpinBox>(w.get(),"frameSpin");spin->setFocus();QTest::keyClick(spin,Qt::Key_Space);QCOMPARE(toggle.size(),1);
+        auto *check=child<QCheckBox>(w.get(),"methodCheck0");check->setFocus();QVERIFY(check->isChecked());QTest::keyClick(check,Qt::Key_Space);QVERIFY(!check->isChecked());QCOMPARE(toggle.size(),1);
+        auto *combo=child<QComboBox>(w.get(),"speedCombo");combo->setFocus();QTest::keyClick(combo,Qt::Key_Space);QCOMPARE(toggle.size(),1);combo->hidePopup();
+        auto *play=child<QPushButton>(w.get(),"playButton");play->setFocus();QTest::keyClick(play,Qt::Key_Space);QCOMPARE(toggle.size(),2);
+        QDialog dialog(w.get());dialog.setModal(true);auto *layout=new QVBoxLayout(&dialog);auto *editor=new QLineEdit("abc");layout->addWidget(editor);dialog.show();editor->setFocus();editor->setCursorPosition(3);QTest::qWait(20);QTest::keyClick(editor,Qt::Key_Space);QCOMPARE(editor->text(),QString("abc "));QCOMPARE(toggle.size(),2);dialog.accept();
+        radar::Dataset empty;w->setDataset(empty);w->setFocus();QTest::keyClick(w.get(),Qt::Key_Space);QCOMPARE(toggle.size(),2);
+    }
+    void compactLayoutsKeepPlaybackImagesAndAllRowsAccessible() {
+        std::unique_ptr<radar::Frontend> w(radar_create_frontend(nullptr));w->setDataset(data());w->showFrame(frame(7202));w->show();
+        const QString evidence=qEnvironmentVariable("RADAR_UI_EVIDENCE_DIR");if(!evidence.isEmpty())QVERIFY(QDir().mkpath(evidence));
+        auto *tabs=child<QTabWidget>(w.get(),"inspectorTabs");auto *chart=child<QWidget>(w.get(),"trajectoryPanel");auto *table=child<QTableWidget>(w.get(),"poseTable");QVERIFY(tabs);QCOMPARE(tabs->count(),2);
+        for(int method=0;method<7;++method)QVERIFY(child<QCheckBox>(w.get(),qPrintable(QStringLiteral("methodCheck%1").arg(method)))->isChecked());
+        for(const QSize size:{QSize(1480,980),QSize(1280,800),QSize(1020,720)}) {
+            w->resize(size);QTest::qWait(30);QCOMPARE(w->size(),size);
+            for(const char *name:{"cameraImage","radarImage","trajectoryPanel","playButton","frameSlider","frameSpin","exportButton"}) {auto *widget=child<QWidget>(w.get(),name);QVERIFY(widget);QVERIFY(widget->isVisible());const QRect bounds(widget->mapTo(w.get(),QPoint()),widget->size());QVERIFY2(w->rect().contains(bounds),name);}
+            QVERIFY(child<QWidget>(w.get(),"cameraImage")->height()>=130);QVERIFY(child<QWidget>(w.get(),"radarImage")->height()>=130);QVERIFY(chart->height()>=120);
+            if(size==QSize(1480,980))QVERIFY2(chart->height()>=320,"The full-size trajectory must have substantially more vertical room than the previous dashboard");
+            const QRect lastRow=table->visualItemRect(table->item(6,0));QVERIFY2(table->viewport()->rect().contains(lastRow),"Seventh row must remain fully readable at compact window sizes");QCOMPARE(table->verticalScrollBar()->maximum(),0);
+            if(!evidence.isEmpty())QVERIFY(w->grab().save(QDir(evidence).filePath(QStringLiteral("synthetic-%1x%2-poses.png").arg(size.width()).arg(size.height()))));
+            QTest::mouseClick(tabs->tabBar(),Qt::LeftButton,Qt::NoModifier,tabs->tabBar()->tabRect(1).center());QTest::qWait(10);QCOMPARE(tabs->currentIndex(),1);QVERIFY(child<QWidget>(w.get(),"errorPanel")->isVisible());QVERIFY(!table->isVisible());QVERIFY(!child<QWidget>(w.get(),"errorPanel")->grab().isNull());
+            if(!evidence.isEmpty())QVERIFY(w->grab().save(QDir(evidence).filePath(QStringLiteral("synthetic-%1x%2-errors.png").arg(size.width()).arg(size.height()))));
+            QTest::mouseClick(tabs->tabBar(),Qt::LeftButton,Qt::NoModifier,tabs->tabBar()->tabRect(0).center());QTest::qWait(10);QCOMPARE(tabs->currentIndex(),0);QVERIFY(table->isVisible());QVERIFY(table->viewport()->rect().contains(table->visualItemRect(table->item(6,0))));
+        }
+        QSignalSpy toggle(w.get(),&radar::Frontend::toggleRequested),seek(w.get(),&radar::Frontend::seekRequested);QTest::mouseClick(child<QPushButton>(w.get(),"playButton"),Qt::LeftButton);QCOMPARE(toggle.size(),1);auto *slider=child<QSlider>(w.get(),"frameSlider");slider->setFocus();QTest::keyClick(slider,Qt::Key_Home);QCOMPARE(seek.last()[0].toInt(),0);
+        QString detail;QTimer::singleShot(0,w.get(),[&]{auto *dialog=child<QDialog>(w.get(),"syncDetailsDialog");if(dialog){detail=dialog->findChild<QLabel*>("syncDetailsText")->text();dialog->reject();}});QTest::mouseClick(child<QPushButton>(w.get(),"syncDetailsButton"),Qt::LeftButton);QCOMPARE(detail,child<QLabel>(w.get(),"timestampLabel")->text());
     }
 };
 QTEST_MAIN(FrontendTest)
