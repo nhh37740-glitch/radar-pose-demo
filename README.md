@@ -2,7 +2,9 @@
 
 An independently versioned and deployed static module for replaying the complete real Oxford sequence `2019-01-15-13-06-37`.
 
-The complete binary data pack contains **7,203** paired radar and stereo frames, with saved pose estimates for frames **0–7202**, spanning about **1800.02 seconds** of capture. The browser fetches 240 pose rows per page and keeps only 32 radar and 32 stereo images in its application cache. A scrubber can seek any recorded frame. The existing 240-frame real excerpt remains an explicitly labeled fallback if the complete data pack is unavailable. The browser does not run a model, call an inference API, or perform live inference.
+The complete binary data pack contains **7,203** paired radar and stereo frames, with saved pose estimates for frames **0–7202**, spanning about **1800.02 seconds** of capture. The browser fetches 240 pose rows per page and keeps only 32 radar and 32 stereo images in its application cache. Playback advances **10 frames every 100 ms** by default and fetches only the selected radar/stereo pair; skipped images are not prefetched. A scrubber can seek any recorded frame, including the last frame before playback wraps to zero. The existing 240-frame real excerpt remains an explicitly labeled fallback if the complete data pack is unavailable. The browser does not run a model, call an inference API, or perform live inference.
+
+Pause/Resume is available while records and images load. Pause cancels any pending advance from the displayed frame; late responses cannot move the display. A missing or timed-out image clears that sensor view and shows an explicit message while the recorded pose and other sensor remain available. Seek or playback can continue, and loading a later valid frame clears the message. Data-page failures pause playback with a retry message; Resume retries that frame. Browser assets use a version query so an existing cached script does not keep the previous control behavior.
 
 ## Module boundaries
 
@@ -21,9 +23,11 @@ python3 tools/prepare_full_data.py --source /path/to/radar-pose-demo
 python3 tools/package_release.py
 ```
 
-The generator refuses any existing output directory, including a mounted live pack. Interrupted preparation leaves no published partial pack. Normal failures clean the temporary directory; a hard termination may leave an ignored staging directory that a later run does not use. To update an existing pack, prepare into a new path and switch the pack after validation. The browser plays the complete sequence at a 100 ms interval. `tools/prepare_excerpt.py` remains only for regenerating the separate fallback; do not run it during full release preparation.
+The generator refuses any existing output directory, including a mounted live pack. Interrupted preparation leaves no published partial pack. Normal failures clean the temporary directory; a hard termination may leave an ignored staging directory that a later run does not use. To update an existing pack, prepare into a new path and switch the pack after validation. `frameStep` and `intervalMs` in `web/config.js` control the default 10-frame advance at a 100 ms interval. `tools/prepare_excerpt.py` remains only for regenerating the separate fallback; do not run it during full release preparation.
 
 ## Validate and serve
+
+Run the control regression harness on the server with Node.js 22 or later: `node tools/verify_playback.cjs`. It uses isolated test fixtures to check skipped image requests, image failures/timeouts, pause during asynchronous loading, stale seeks, resume timing, page retry, and final-frame wrap. Production data remains unchanged.
 
 ```bash
 python3 tools/package_release.py

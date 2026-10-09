@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Radar Pose Playback · Oxford recorded sequence</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=20261009-playback10" />
   </head>
   <body>
     <div class="stage">
@@ -24,7 +24,7 @@
               </div>
             </div>
             <div class="camera-frame">
-              <img id="stereo-image" alt="Current stereo centre RGB frame" />
+              <img id="stereo-image" alt="Current stereo centre RGB frame" /><p id="stereo-image-status" class="sensor-image-status" role="status" hidden></p>
             </div>
           </article>
 
@@ -37,7 +37,7 @@
               </div>
             </div>
             <div class="radar-frame">
-              <img id="radar-image" alt="Current radar bird's-eye-view frame" />
+              <img id="radar-image" alt="Current radar bird's-eye-view frame" /><p id="radar-image-status" class="sensor-image-status" role="status" hidden></p>
               <div class="radar-scan" aria-hidden="true"></div>
               <div class="sensor-mark" aria-hidden="true"></div>
             </div>
@@ -214,8 +214,8 @@
       <footer class="replay-footer">
         <p class="legend-line">Oxford recorded sequence 2019-01-15-13-06-37 · all available frames load in pages</p>
         <p class="replay-note">All poses shown below are saved per-frame estimates. 不在浏览器中运行模型推理。 The browser only replays these records; it does not run a model or perform live inference.</p>
-        <p class="legend-line">NED world frame · Space toggles playback · R restarts · playback interval 100 ms per saved frame</p>
-        <div class="playback-controls"><button id="playback-toggle" type="button" disabled>Pause</button><label class="seek-control" for="frame-seek"><span id="seek-label">Frame —</span><input id="frame-seek" type="range" min="0" max="0" value="0" aria-label="Seek to recorded frame" /></label></div>
+        <p class="legend-line">NED world frame · Space toggles playback · R restarts · playback advances 10 frames every 100 ms · skipped images are not fetched</p>
+        <div class="playback-controls"><button id="playback-toggle" type="button" aria-pressed="false">Pause</button><label class="seek-control" for="frame-seek"><span id="seek-label">Frame —</span><input id="frame-seek" type="range" min="0" max="0" value="0" aria-label="Seek to recorded frame" /></label></div>
         <p id="data-notice" class="data-notice">Checking complete recording…</p>
         <p id="status" class="status">Loading saved pose records…</p>
         <p class="attribution">Data: <a href="https://oxford-robotics-institute.github.io/radar-robotcar-dataset/" rel="noreferrer">Oxford Radar RobotCar</a> + <a href="https://robotcar-dataset.robots.ox.ac.uk/" rel="noreferrer">Oxford RobotCar</a> ·
@@ -224,7 +224,7 @@
       </footer>
     </div>
 
-    <script src="config.js"></script>
-    <script src="app.js"></script>
+    <script src="config.js?v=20261009-playback10"></script>
+    <script src="app.js?v=20261009-playback10"></script>
   </body>
 </html>

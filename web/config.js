@@ -8,5 +8,7 @@ window.DEMO_CONFIG = {
   startFrame: 0,
   frameCount: 240,
   intervalMs: 100,
+  frameStep: 10,
+  loadTimeoutMs: 15000,
   mapSpanMetres: 128,
 };

@@ -131,8 +131,9 @@
     };
   }));
 
-  const PRELOAD_AHEAD = 12;
   const MAX_CACHED_IMAGES = 32;
+  const FRAME_STEP = Math.max(1, Math.floor(Number(config?.frameStep) || 10));
+  const LOAD_TIMEOUT_MS = Math.max(1000, Number(config?.loadTimeoutMs) || 15000);
   let clip = [];
   let cameraCenters = [];
   let localBounds = null;
@@ -144,6 +145,11 @@
   let pageStart = 0;
   let totalFrames = 0;
   let transitioning = false;
+  let requestVersion = 0;
+  let ready = false;
+  let loadingMessage = "Loading saved pose records…";
+  let dataError = "";
+  let retryFrame = 0;
   const notice = document.getElementById("data-notice");
   const seek = document.getElementById("frame-seek");
   const playbackToggle = document.getElementById("playback-toggle");
@@ -157,14 +163,20 @@
 
   function fail(message) {
     paused = true;
-    playbackToggle.disabled = true;
-    status.textContent = message;
-    status.classList.add("error");
-    if (notice) {
-      notice.textContent = message;
-      notice.classList.add("error");
-    }
+    dataError = message;
+    loadingMessage = "";
+    updatePlaybackState();
     console.error(message);
+  }
+
+  function updatePlaybackState() {
+    playbackToggle.textContent = paused ? "Resume" : "Pause";
+    playbackToggle.setAttribute("aria-pressed", String(paused));
+    status.classList.toggle("error", Boolean(dataError));
+    const position = `saved pose replay ${pageStart + currentIndex + 1} / ${totalFrames}`;
+    status.textContent = dataError || (loadingMessage
+      ? `${paused ? "Paused · " : ""}${loadingMessage}`
+      : `${paused ? "Paused" : "Recorded"} · ${position} · ${FRAME_STEP}-frame steps`);
   }
 
   function ensureTrailingSlash(path) {
@@ -182,17 +194,27 @@
   }
 
   async function fetchJson(path) {
-    const response = await fetch(path, { cache: "default" });
-    if (!response.ok) throw new Error(`Could not load recorded data: ${path} (HTTP ${response.status})`);
-    return response.json();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), LOAD_TIMEOUT_MS);
+    try {
+      const response = await fetch(path, { cache: "default", signal: controller.signal });
+      if (!response.ok) throw new Error(`Could not load recorded data: ${path} (HTTP ${response.status})`);
+      return await response.json();
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   function loadPoseScript(path) {
     return new Promise((resolve, reject) => {
       const script = document.createElement("script");
+      const timer = setTimeout(() => {
+        script.remove();
+        reject(new Error(`Timed out loading pose data: ${path}`));
+      }, LOAD_TIMEOUT_MS);
       script.src = path;
-      script.onload = resolve;
-      script.onerror = () => reject(new Error(`Could not load pose data: ${path}`));
+      script.onload = () => { clearTimeout(timer); resolve(); };
+      script.onerror = () => { clearTimeout(timer); reject(new Error(`Could not load pose data: ${path}`)); };
       document.head.appendChild(script);
     });
   }
@@ -510,12 +532,8 @@
     localBounds = computeLocalBounds(cameraCenters[index]);
     const cachedRadar = radarImageCache.get(row[F.timestamp]);
     const cachedStereo = stereoImageCache.get(row[F.stereoTimestamp]);
-    radarImage.src = cachedRadar
-      ? cachedRadar.src
-      : radarImageUrl(row[F.timestamp]);
-    stereoImage.src = cachedStereo
-      ? cachedStereo.src
-      : stereoImageUrl(row[F.stereoTimestamp]);
+    displaySensorImage(radarImage, cachedRadar, "radar");
+    displaySensorImage(stereoImage, cachedStereo, "stereo");
     setText("frame-label", `Frame ${row[F.frameIndex]}`);
     setText("timestamp-label", `Timestamp ${row[F.timestamp]}`);
     updateValues(row);
@@ -525,10 +543,16 @@
     const absoluteIndex = pageStart + index;
     seek.value = String(absoluteIndex);
     setText("seek-label", `Frame ${absoluteIndex} / ${totalFrames - 1}`);
-    status.textContent = paused ? `Paused · saved pose replay ${absoluteIndex + 1} / ${totalFrames}` :
-      `Recorded pose replay ${absoluteIndex + 1} / ${totalFrames} · no live inference`;
-    playbackToggle.textContent = paused ? "Resume" : "Pause";
-    warmImageCache(index);
+    updatePlaybackState();
+  }
+
+  function displaySensorImage(element, loaded, label) {
+    const message = document.getElementById(`${label}-image-status`);
+    element.hidden = !loaded;
+    if (loaded) element.src = loaded.src;
+    else element.removeAttribute("src");
+    message.hidden = Boolean(loaded);
+    message.textContent = loaded ? "" : `${label === "radar" ? "Radar" : "Stereo"} image unavailable for this frame. Use playback or seek to continue.`;
   }
 
   function loadCachedImage(cache, inflight, key, url, label) {
@@ -538,18 +562,31 @@
     if (inflight.has(key)) return inflight.get(key);
     const promise = new Promise((resolve, reject) => {
       const image = new Image();
+      let settled = false;
+      const finish = (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        image.onload = null;
+        image.onerror = null;
+        inflight.delete(key);
+        if (error) reject(error);
+        else resolve(image);
+      };
+      const timer = setTimeout(() => {
+        finish(new Error(`Timed out loading ${label} image: ${url}`));
+        image.src = "";
+      }, LOAD_TIMEOUT_MS);
       image.onload = () => {
         cache.set(key, image);
         while (cache.size > MAX_CACHED_IMAGES) {
           const oldestTimestamp = cache.keys().next().value;
           cache.delete(oldestTimestamp);
         }
-        inflight.delete(key);
-        resolve(image);
+        finish();
       };
       image.onerror = () => {
-        inflight.delete(key);
-        reject(new Error(`Missing ${label} image: ${url}`));
+        finish(new Error(`Missing ${label} image: ${url}`));
       };
       image.src = url;
     });
@@ -577,30 +614,6 @@
       stereoImageUrl(timestamp),
       "stereo",
     );
-  }
-
-  function warmImageCache(index) {
-    for (let offset = 0; offset < Math.min(PRELOAD_AHEAD, clip.length); offset += 1) {
-      const next = index + offset;
-      if (next >= clip.length) break;
-      const row = clip[next];
-      if (radarImageInflight.size < PRELOAD_AHEAD) {
-        loadRadarImage(row).catch((error) => fail(error.message));
-      }
-      if (stereoImageInflight.size < PRELOAD_AHEAD) {
-        loadStereoImage(row).catch((error) => fail(error.message));
-      }
-    }
-  }
-
-  async function preloadInitialImages() {
-    const initial = clip.slice(0, Math.min(PRELOAD_AHEAD, clip.length));
-    let loaded = 0;
-    for (const row of initial) {
-      await Promise.all([loadRadarImage(row), loadStereoImage(row)]);
-      loaded += 1;
-      status.textContent = `Loading saved radar/stereo frames ${loaded} / ${initial.length}`;
-    }
   }
 
   function validateManifest(manifest) {
@@ -632,43 +645,61 @@
     if (!page || absoluteIndex < page.startFrame || absoluteIndex >= page.startFrame + page.count) {
       throw new Error(`Frame ${absoluteIndex} is outside the recorded sequence`);
     }
-    status.textContent = `Loading recorded frames ${page.startFrame}–${page.startFrame + page.count - 1}…`;
     const data = await fetchJson(`./full/${page.file}`);
     if (data.startFrame !== page.startFrame || !Array.isArray(data.frames) ||
         data.frames.length !== page.count || data.frames.some((row, offset) =>
           !Array.isArray(row) || row.length !== 32 || row[F.frameIndex] !== page.startFrame + offset)) {
       throw new Error(`Recorded frame page ${pageNumber} is missing or invalid`);
     }
-    clip = data.frames;
-    pageStart = page.startFrame;
-    currentIndex = absoluteIndex - pageStart;
-    cameraCenters = computeCameraCenters(clip);
-    await Promise.all([loadRadarImage(clip[currentIndex]), loadStereoImage(clip[currentIndex])]);
+    return { frames: data.frames, start: page.startFrame };
   }
 
   async function seekFrame(absoluteIndex) {
-    if (transitioning) return;
+    if (!ready || !Number.isInteger(absoluteIndex) || absoluteIndex < 0 || absoluteIndex >= totalFrames) return;
+    const version = ++requestVersion;
+    retryFrame = absoluteIndex;
     transitioning = true;
+    dataError = "";
+    loadingMessage = `Loading recorded frame ${absoluteIndex}…`;
+    updatePlaybackState();
     try {
+      let nextClip = clip;
+      let nextStart = pageStart;
       if (usingFullData && (absoluteIndex < pageStart || absoluteIndex >= pageStart + clip.length)) {
         const pageNumber = Math.floor(absoluteIndex / fullManifest.pageSize);
-        await loadPage(pageNumber, absoluteIndex);
-      } else {
-        currentIndex = absoluteIndex - pageStart;
+        const page = await loadPage(pageNumber, absoluteIndex);
+        if (version !== requestVersion) return;
+        nextClip = page.frames;
+        nextStart = page.start;
       }
+      const nextIndex = absoluteIndex - nextStart;
+      const row = nextClip[nextIndex];
+      const images = await Promise.allSettled([loadRadarImage(row), loadStereoImage(row)]);
+      if (version !== requestVersion) return;
+      images.forEach((result) => {
+        if (result.status === "rejected") console.warn(result.reason.message);
+      });
+      clip = nextClip;
+      pageStart = nextStart;
+      currentIndex = nextIndex;
+      cameraCenters = computeCameraCenters(clip);
+      loadingMessage = "";
       render(currentIndex);
       lastStep = performance.now();
     } catch (error) {
-      paused = true;
-      fail(error.message);
+      if (version === requestVersion) {
+        if (clip.length) seek.value = String(pageStart + currentIndex);
+        fail(`${error.message}. Resume to retry, or seek another frame.`);
+      }
     } finally {
-      transitioning = false;
+      if (version === requestVersion) transitioning = false;
     }
   }
 
   function animate(timestamp) {
-    if (!paused && !transitioning && timestamp - lastStep >= config.intervalMs) {
-      const next = (pageStart + currentIndex + 1) % totalFrames;
+    if (ready && !paused && !transitioning && !dataError && timestamp - lastStep >= config.intervalMs) {
+      const absoluteIndex = pageStart + currentIndex;
+      const next = absoluteIndex === totalFrames - 1 ? 0 : Math.min(absoluteIndex + FRAME_STEP, totalFrames - 1);
       lastStep = timestamp;
       void seekFrame(next);
     }
@@ -676,10 +707,23 @@
   }
 
   function togglePlayback() {
-    if (playbackToggle.disabled) return;
     paused = !paused;
-    if (!paused) lastStep = performance.now();
-    render(currentIndex);
+    if (paused && ready && transitioning && clip.length > 0) {
+      // Keep the displayed frame frozen; late image/page responses only populate caches.
+      requestVersion += 1;
+      transitioning = false;
+      loadingMessage = "";
+      seek.value = String(pageStart + currentIndex);
+    }
+    if (!paused) {
+      lastStep = performance.now();
+      if (dataError) {
+        dataError = "";
+        if (ready) void seekFrame(retryFrame);
+        else void start().catch((error) => fail(error.message));
+      }
+    }
+    updatePlaybackState();
   }
 
   function bindControls() {
@@ -693,9 +737,10 @@
         void seekFrame(0);
       }
     });
-    seek.max = String(totalFrames - 1);
+    seek.disabled = true;
     seek.addEventListener("change", () => {
       paused = true;
+      updatePlaybackState();
       void seekFrame(Number(seek.value));
     });
   }
@@ -725,11 +770,12 @@
     overviewRows = clip;
     notice.textContent = `Full recording data is unavailable. Showing the ${totalFrames}-frame real excerpt only.`;
     notice.classList.add("error");
-    await preloadInitialImages();
   }
 
   async function start() {
     if (!config) throw new Error("DEMO_CONFIG is missing");
+    loadingMessage = "Loading saved pose records…";
+    updatePlaybackState();
     let manifest;
     try {
       manifest = await fetchJson(config.fullDataManifest);
@@ -745,13 +791,14 @@
       globalBounds = manifest.globalBounds;
       overviewRows = manifest.overviewRows;
       notice.textContent = `Complete real recording: ${totalFrames} paired radar and stereo frames · ${metadata.recordedDurationSeconds.toFixed(2)} seconds of capture · saved pose estimates.`;
-      await loadPage(0, 0);
     }
-    bindControls();
-    render(currentIndex);
-    lastStep = performance.now();
-    window.requestAnimationFrame(animate);
+    seek.max = String(totalFrames - 1);
+    seek.disabled = false;
+    ready = true;
+    await seekFrame(0);
   }
 
+  bindControls();
+  window.requestAnimationFrame(animate);
   start().catch((error) => fail(error.message));
 })();
