@@ -29,6 +29,7 @@ pipeline {
         }
         stage('Validate and package module') {
             steps {
+                sh 'node tools/verify_playback.cjs'
                 sh 'python3 tools/package_release.py'
                 archiveArtifacts artifacts: 'dist/*.zip,dist/*.zip.sha256,dist/*.manifest.json', fingerprint: true
             }
