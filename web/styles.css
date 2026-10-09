@@ -580,7 +580,12 @@ footer {
 .signal::after { display: none; animation: none; }
 .replay-footer { display: grid; gap: 0.35rem; padding: 0.8rem 1rem; background: rgba(12, 20, 28, 0.88); border: 1px solid rgba(81, 216, 238, 0.16); border-radius: 0.7rem; font-size: clamp(0.56rem, 0.7vw, 0.78rem); }
 .replay-footer p { margin: 0; }
-.seek-control { display: flex; align-items: center; gap: 1rem; color: #e9f1ef; }
+.playback-controls { display: flex; align-items: center; gap: 0.75rem; }
+.playback-controls button { padding: 0.35rem 0.8rem; border: 1px solid #51d8ee; border-radius: 0.35rem; background: rgba(81, 216, 238, 0.12); color: #e9f1ef; font: inherit; cursor: pointer; }
+.playback-controls button:hover:not(:disabled) { background: rgba(81, 216, 238, 0.24); }
+.playback-controls button:focus-visible { outline: 2px solid #7fe5f3; outline-offset: 2px; }
+.playback-controls button:disabled { opacity: 0.5; cursor: default; }
+.seek-control { display: flex; flex: 1; align-items: center; gap: 1rem; min-width: 0; color: #e9f1ef; }
 .seek-control input { flex: 1; min-width: 8rem; accent-color: #51d8ee; }
 .data-notice { color: #b8c7cd; }
 .data-notice.error { color: #ffad96; }

@@ -146,6 +146,7 @@
   let transitioning = false;
   const notice = document.getElementById("data-notice");
   const seek = document.getElementById("frame-seek");
+  const playbackToggle = document.getElementById("playback-toggle");
   let currentIndex = 0;
   let paused = false;
   let lastStep = 0;
@@ -156,6 +157,7 @@
 
   function fail(message) {
     paused = true;
+    playbackToggle.disabled = true;
     status.textContent = message;
     status.classList.add("error");
     if (notice) {
@@ -525,6 +527,7 @@
     setText("seek-label", `Frame ${absoluteIndex} / ${totalFrames - 1}`);
     status.textContent = paused ? `Paused · saved pose replay ${absoluteIndex + 1} / ${totalFrames}` :
       `Recorded pose replay ${absoluteIndex + 1} / ${totalFrames} · no live inference`;
+    playbackToggle.textContent = paused ? "Resume" : "Pause";
     warmImageCache(index);
   }
 
@@ -672,12 +675,20 @@
     window.requestAnimationFrame(animate);
   }
 
+  function togglePlayback() {
+    if (playbackToggle.disabled) return;
+    paused = !paused;
+    if (!paused) lastStep = performance.now();
+    render(currentIndex);
+  }
+
   function bindControls() {
+    playbackToggle.disabled = false;
+    playbackToggle.addEventListener("click", togglePlayback);
     window.addEventListener("keydown", (event) => {
       if (event.code === "Space") {
         event.preventDefault();
-        paused = !paused;
-        render(currentIndex);
+        if (!event.repeat) togglePlayback();
       } else if (event.key.toLowerCase() === "r") {
         void seekFrame(0);
       }

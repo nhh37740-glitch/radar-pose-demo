@@ -53,7 +53,7 @@ pipeline {
                     candidate=radar-pose-demo-candidate
                     sudo docker rm -f "$candidate" >/dev/null 2>&1 || true
                     trap 'sudo docker rm -f radar-pose-demo-candidate >/dev/null 2>&1 || true' EXIT
-                    sudo docker run -d --name "$candidate" --mount "type=bind,source=$PWD/runtime-data,target=/usr/share/nginx/html/full,readonly" -p 127.0.0.1:18105:80 radar-pose-demo:local
+                    sudo docker run -d --name "$candidate" --mount "type=bind,source=$PWD/runtime-data,target=/usr/share/nginx/html/full,readonly" -p 127.0.0.1::80 radar-pose-demo:local
                     for attempt in $(seq 1 24); do
                         status="$(sudo docker inspect --format '{{.State.Health.Status}}' "$candidate")"
                         if [ "$status" = healthy ]; then break; fi
@@ -67,7 +67,9 @@ pipeline {
                         sudo docker logs --tail=100 "$candidate"
                         exit 1
                     fi
-                    base="http://127.0.0.1:18105"
+                    candidate_port="$(sudo docker port "$candidate" 80/tcp | sed -n 's/.*://p')"
+                    test -n "$candidate_port"
+                    base="http://127.0.0.1:$candidate_port"
                     curl -fsS "$base/index.html" | grep -q '不在浏览器中运行模型推理'
                     curl -fsS "$base/data-license.html" | grep -q 'CC BY-NC-SA 4.0'
                     curl -fsS "$base/full/manifest.json" | grep -q '"sampleCount":7203'
